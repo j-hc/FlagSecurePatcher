@@ -1,0 +1,7 @@
+id=flagsecurepatcher
+name=FlagSecurePatcher
+version=r1
+versionCode=1
+author=j-hc
+description=Disable flag secure by patching services.jar on-device
+updateJson=https://raw.githubusercontent.com/j-hc/FlagSecurePatcher/master/update.json
