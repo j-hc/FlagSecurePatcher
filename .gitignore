@@ -1,6 +1,11 @@
 deps
 services
 services-da
+out
 /*.sh
 /*.java
 /*.zip
+/*.jar
+/*.dex
+/*.class
+/*.smali
