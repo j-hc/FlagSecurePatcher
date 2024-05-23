@@ -3,8 +3,8 @@
 set -eu
 
 LIBPATH="$MODPATH/util/lib/${ARCH}"
-alias zip='$MODPATH/util/bin/$ARCH/zip'
-alias zipalign='$MODPATH/util/bin/$ARCH/zipalign'
+alias zip='LD_LIBRARY_PATH=$LIBPATH $MODPATH/util/bin/$ARCH/zip'
+alias zipalign='LD_LIBRARY_PATH=$LIBPATH $MODPATH/util/bin/$ARCH/zipalign'
 chmod -R 755 "$MODPATH/util/"
 
 TMPPATH="$MODPATH/tmp"
@@ -93,11 +93,11 @@ if [ "$SERR" ]; then abort "ERROR: $SERR"; fi
 
 ui_print "* Zipping"
 cd "$TMPPATH/services/" || abort "unreachable1"
-LD_LIBRARY_PATH=$LIBPATH zip -q -0 -r "$TMPPATH/services-patched.zip" ./
+zip -q -0 -r "$TMPPATH/services-patched.zip" ./
 cd "$MODPATH" || abort "unreachable2"
 
 ui_print "* Zip aligning"
-LD_LIBRARY_PATH=$LIBPATH zipalign -p -z 4 "$TMPPATH/services-patched.zip" "$MODPATH/system/framework/services.jar"
+zipalign -p -z 4 "$TMPPATH/services-patched.zip" "$MODPATH/system/framework/services.jar"
 set_perm "$MODPATH/system/framework/services.jar" 0 0 644 u:object_r:system_file:s0
 
 ui_print "* Optimizing"
