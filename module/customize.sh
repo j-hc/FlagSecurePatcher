@@ -1,16 +1,22 @@
 #!/system/bin/sh
 
+set -e
+
 LIBPATH="$MODPATH/util/lib/${ARCH}"
 export PATH="${PATH}:$MODPATH/util/bin/${ARCH}"
 TMPPATH="$MODPATH/tmp"
-
-chmod -R 755 "$MODPATH/util/bin/${ARCH}" "$LIBPATH"
+chmod -R 755 "$MODPATH/util/"
 mkdir "$TMPPATH"
+
 cp /system/framework/services.jar "$TMPPATH"
 
 ui_print "* Extracting services"
 unzip -q "$TMPPATH/services.jar" -d "$TMPPATH/services"
 for C in "$TMPPATH"/services/classes*; do
+    if [ "$C" = "$TMPPATH/services/classes*" ]; then
+        ls -l "$TMPPATH/services/"
+        abort "classes glob fail"
+    fi
     O="${C##*/}"
     O="${O%.*}"
     ui_print "* Disassembling $O"
@@ -29,7 +35,7 @@ awk '
 BEGIN {
     in_method = 0
 }
-/\.method isSecureLocked\(\)Z/ {
+/\.method .*isSecureLocked\(\)Z/ {
     in_method = 1
     print
     print "    .registers 1"
@@ -60,7 +66,7 @@ if [ "$API" -ge 34 ]; then
 BEGIN {
     in_method = 0
 }
-/\.method public notifyScreenshotListeners\(I\)Ljava\/util\/List;/ {
+/\.method .*notifyScreenshotListeners\(I\)Ljava\/util\/List;/ {
     in_method = 1
     print
     print "    .registers 2"
@@ -96,9 +102,9 @@ ANDROID_DATA="$TMPPATH" CLASSPATH="$MODPATH/util/smali.jar" app_process "$MODPAT
     -o "$TMPPATH/services/$TARGET_CLASS.dex"
 
 ui_print "* Zipping"
-cd "$TMPPATH/services/" || abort ""
+cd "$TMPPATH/services/" || abort "unreachable1"
 LD_LIBRARY_PATH=$LIBPATH zip -q -0 -r "$TMPPATH/services-patched.zip" ./
-cd "$MODPATH" || abort ""
+cd "$MODPATH" || abort "unreachable2"
 
 ui_print "* Zip aligning"
 LD_LIBRARY_PATH=$LIBPATH zipalign -p -z 4 "$TMPPATH/services-patched.zip" "$MODPATH/system/framework/services.jar"
@@ -107,7 +113,7 @@ set_perm "$MODPATH/system/framework/services.jar" 0 0 644 u:object_r:system_file
 ui_print "* Cleanup"
 if [ "$ARCH" = x64 ]; then INS_SET=x86_64; else INS_SET=$ARCH; fi
 rm -r "$TMPPATH" "$MODPATH/util"
-rm "/data/dalvik-cache/$INS_SET/system@framework@services.jar@classes.dex" || :
+rm "/data/dalvik-cache/$INS_SET/system@framework@services.jar@classes.dex" 2>/dev/null || :
 
 ui_print "* Optimizing"
 mkdir "$MODPATH/system/framework/oat/$INS_SET"
@@ -118,3 +124,5 @@ set_perm "$MODPATH/system/framework/oat/$INS_SET/services.vdex" 0 0 644 u:object
 
 ui_print ""
 ui_print "  by github.com/j-hc"
+
+set +e
