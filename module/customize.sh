@@ -35,6 +35,7 @@ patch() {
     signature="$1"
     code="$2"
     TARGET=$(grep -rn -x "$signature" "$TMPPATH/services-da" | grep -v 'abstract') || abort "Method not found"
+    [ "$(echo "$TARGET" | wc -l)" = 1 ] || abort "Multiple definitons: ${TARGET}"
     TARGET_NR="${TARGET%:*}"
     TARGET_NR="${TARGET_NR##*:}"
     TARGET_SMALI="${TARGET%%:*}"
