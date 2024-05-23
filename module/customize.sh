@@ -25,7 +25,7 @@ for C in "$TMPPATH"/services/classes*; do
 done
 
 ui_print "* Patching isSecureLocked"
-TARGET=$(grep -rn -Fx '.method isSecureLocked()Z' "$TMPPATH/services-da")
+TARGET=$(grep -rn -x '.method .*isSecureLocked()Z' "$TMPPATH/services-da")
 [ -z "$TARGET" ] && abort "Method not found"
 TARGET_SMALI="${TARGET%%:*}"
 TARGET_CLASS="${TARGET_SMALI#"$TMPPATH/services-da/"}"
@@ -56,7 +56,7 @@ mv -f "$TMP_TARGET_CLASS" "$TARGET_SMALI"
 
 if [ "$API" -ge 34 ]; then
     ui_print "* Patching notifyScreenshotListeners (SDK level >= 34)"
-    TARGET=$(grep -rn -Fx '.method public notifyScreenshotListeners(I)Ljava/util/List;' "$TMPPATH/services-da")
+    TARGET=$(grep -rn -x '.method .*notifyScreenshotListeners(I)Ljava/util/List;' "$TMPPATH/services-da")
     [ -z "$TARGET" ] && abort "Method not found"
     TARGET_SMALI="${TARGET%%:*}"
     TARGET_CLASS="${TARGET_SMALI#"$TMPPATH/services-da/"}"
