@@ -63,7 +63,7 @@ BEGIN {
 /\.method public notifyScreenshotListeners\(I\)Ljava\/util\/List;/ {
     in_method = 1
     print
-	print "    .registers 2"
+    print "    .registers 2"
     print "    .annotation system Ldalvik/annotation/Signature;"
     print "        value = {"
     print "            \"(I)\","
