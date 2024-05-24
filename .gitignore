@@ -1,7 +1,4 @@
 deps
-services
-services-da
-out
 /*.sh
 /*.java
 /*.zip
@@ -9,3 +6,4 @@ out
 /*.dex
 /*.class
 /*.smali
+testing
