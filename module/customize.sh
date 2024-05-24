@@ -6,45 +6,54 @@ LIBPATH="$MODPATH/util/lib/${ARCH}"
 alias zip='LD_LIBRARY_PATH=$LIBPATH $MODPATH/util/bin/$ARCH/zip'
 alias zipalign='LD_LIBRARY_PATH=$LIBPATH $MODPATH/util/bin/$ARCH/zipalign'
 chmod -R 755 "$MODPATH/util/"
-
 TMPPATH="$MODPATH/tmp"
-mkdir "$TMPPATH"
 
-cp "$(magisk --path 2>/dev/null)/.magisk/mirror/system/framework/services.jar" "$TMPPATH" 2>/dev/null \
-    || cp "$NVBASE/modules/flagsecurepatcher/services.jar.bak" "$TMPPATH" 2>/dev/null \
-    || cp /system/framework/services.jar "$TMPPATH"
-cp "$TMPPATH/services.jar" "$MODPATH/services.jar.bak"
+log() { ui_print "[+] $1"; }
+loge() { ui_print "[-] $1"; }
 
-ui_print "* Extracting services"
-mkdir "$TMPPATH/services"
-unzip -q "$TMPPATH/services.jar" -d "$TMPPATH/services"
-for C in "$TMPPATH"/services/classes*; do
-    if [ "$C" = "$TMPPATH/services/classes*" ]; then
-        ui_print "classes glob fail"
-        abort "ROM is not supported"
-    fi
-    O="${C##*/}"
-    O="${O%.*}"
-    ui_print "* Disassembling $O"
-    SERR=$(ANDROID_DATA="$TMPPATH" CLASSPATH="$MODPATH/util/baksmali.jar" app_process "$MODPATH" \
-        com.android.tools.smali.baksmali.Main d "$C" -o "$TMPPATH/services-da/$O" 2>&1)
-    if [ "$SERR" ]; then abort "ERROR: $SERR"; fi
-done
+baksmali() {
+    ANDROID_DATA="$TMPPATH" CLASSPATH="$MODPATH/util/baksmali.jar" app_process "$MODPATH" \
+        com.android.tools.smali.baksmali.Main "$@" || abort "baksmali err: $SERR"
+}
+
+smali() {
+    ANDROID_DATA="$TMPPATH" CLASSPATH="$MODPATH/util/smali.jar" app_process "$MODPATH" \
+        com.android.tools.smali.smali.Main "$@" || abort "smali err: $SERR"
+}
+
+get_class() {
+    # $SIG - $DEX $CLASS
+    for DEX in "$TMPPATH/$TARGET_JAR_BASE"/classes*; do
+        CLASS=$(baksmali l m "$DEX" -a "$API" | grep ";->$1" | grep -Fv '$') || continue
+        CLASS="${CLASS#?}" CLASS="${CLASS%%;*}"
+        return 0
+    done
+    return 1
+}
 
 patch() {
-    signature="$1"
-    code="$2"
-    TARGET=$(grep -rn -x "$signature" "$TMPPATH/services-da" | grep -v 'abstract') || abort "Method not found"
-    [ "$(echo "$TARGET" | wc -l)" = 1 ] || abort "Multiple definitions: ${TARGET}"
-    TARGET_NR="${TARGET%:*}"
-    TARGET_NR="${TARGET_NR##*:}"
-    TARGET_SMALI="${TARGET%%:*}"
-    TARGET_CLASS="${TARGET_SMALI#"$TMPPATH/services-da/"}"
-    TARGET_CLASS="${TARGET_CLASS%%/*}"
-    TARGET_SMALI_PATCHED="$TMPPATH/${TARGET_SMALI##*/}"
+    signature="$1" code="$2"
 
-    CODE="$code" awk -v TARGET_NR="$TARGET_NR" '
-NR == TARGET_NR {
+    get_class "$signature" || {
+        loge "Method not found"
+        return 1
+    }
+    DEXBASE="${DEX##*/}" DEXBASE="${DEXBASE%.*}"
+    TARGET_SMALI="$TMPPATH/$TARGET_JAR_BASE-da/$DEXBASE/$CLASS.smali"
+    [ -d "$TMPPATH/$TARGET_JAR_BASE-da/$DEXBASE" ] || {
+        log "Disassembling $DEXBASE.dex"
+        baksmali d "$DEX" -o "$TMPPATH/$TARGET_JAR_BASE-da/$DEXBASE" --di False -a "$API"
+    }
+    METHOD=$(grep -nx "\.method .*$signature" "$TARGET_SMALI") || {
+        loge "Method not found in class"
+        return 1
+    }
+    [ "$(echo "$METHOD" | wc -l)" = 1 ] || abort "Multiple definitions: ${METHOD}"
+    METHOD_NR="${METHOD%:*}"
+    SMALI_PATCHED="$TMPPATH/${TARGET_SMALI##*/}"
+
+    CODE="$code" awk -v METHOD_NR="$METHOD_NR" '
+NR == METHOD_NR {
     in_method = 1
     print
     print ENVIRON["CODE"]
@@ -56,69 +65,101 @@ NR == TARGET_NR {
     next
 }
 { if (!in_method) print }
-' "$TARGET_SMALI" >"$TARGET_SMALI_PATCHED"
-    mv -f "$TARGET_SMALI_PATCHED" "$TARGET_SMALI"
+' "$TARGET_SMALI" >"$SMALI_PATCHED"
+    mv -f "$SMALI_PATCHED" "$TARGET_SMALI"
 }
 
-ui_print "* Patching isSecureLocked"
-isSecureLockedCode='
-.locals 1
-const/4 v0, 0x0
-return v0'
-patch '\.method .*isSecureLocked(.*)Z' "$isSecureLockedCode"
+main() {
+    TARGET_JAR="$1"
+    TARGET_JAR_BASE="${TARGET_JAR%.*}"
 
-if [ "$API" -ge 34 ]; then
-    ui_print "* Patching notifyScreenshotListeners (API >= 34)"
-    notifyScreenshotListenersCode='
-.locals 1
-.annotation system Ldalvik/annotation/Signature;
-    value = {
-        "(I)",
-        "Ljava/util/List<",
-        "Landroid/content/ComponentName;",
-        ">;"
+    mkdir "$TMPPATH"
+    cp "$(magisk --path 2>/dev/null)/.magisk/mirror/system/framework/$TARGET_JAR" "$TMPPATH" 2>/dev/null \
+        || cp "$NVBASE/modules/flagsecurepatcher/$TARGET_JAR.bak" "$TMPPATH/$TARGET_JAR" 2>/dev/null \
+        || cp "/system/framework/$TARGET_JAR" "$TMPPATH"
+    cp "$TMPPATH/$TARGET_JAR" "$MODPATH/$TARGET_JAR.bak"
+
+    log "Extracting $TARGET_JAR_BASE"
+    mkdir "$TMPPATH/$TARGET_JAR_BASE"
+    unzip -q "$TMPPATH/$TARGET_JAR" -d "$TMPPATH/$TARGET_JAR_BASE"
+    [ -f "$TMPPATH/$TARGET_JAR_BASE/classes.dex" ] || abort "ROM is not supported"
+
+    patch_succ=0
+    log "Patching isSecureLocked"
+    isSecureLockedCode='
+    .locals 1
+    const/4 v0, 0x0
+    return v0'
+    if patch 'isSecureLocked(.*)Z' "$isSecureLockedCode"; then
+        log "Patched successfully "
+        patch_succ=1
+    else loge "isSecureLocked patch failed"; fi
+
+    if [ "$API" -ge 34 ]; then
+        log "Patching notifyScreenshotListeners (API >= 34)"
+        notifyScreenshotListenersCode='
+    .locals 1
+    .annotation system Ldalvik/annotation/Signature;
+        value = {
+            "(I)",
+            "Ljava/util/List<",
+            "Landroid/content/ComponentName;",
+            ">;"
+        }
+    .end annotation
+    invoke-static {}, Ljava/util/Collections;->emptyList()Ljava/util/List;
+    move-result-object p1
+    return-object p1'
+        if patch 'notifyScreenshotListeners(I)Ljava/util/List;' "$notifyScreenshotListenersCode"; then
+            log "Patched successfully "
+            patch_succ=1
+        else loge "notifyScreenshotListeners patch failed"; fi
+    fi
+
+    [ $patch_succ = 0 ] && abort "All patches failed"
+    for CL in "$TMPPATH/$TARGET_JAR_BASE-da"/classes*; do
+        CLBASE="${CL##*/}"
+        log "Re-assembling $CLBASE.dex"
+        smali a -a "$API" "$CL" -o "$TMPPATH/$TARGET_JAR_BASE/$CLBASE.dex" || abort
+    done
+
+    log "Zipaligning"
+    cd "$TMPPATH/$TARGET_JAR_BASE/"
+    zip -q0r "$TMPPATH/$TARGET_JAR_BASE-patched.zip" .
+    cd "$MODPATH"
+
+    PATCHED="$MODPATH/system/framework/$TARGET_JAR"
+    zipalign -p -z 4 "$TMPPATH/$TARGET_JAR_BASE-patched.zip" "$PATCHED"
+    set_perm "$PATCHED" 0 0 644 u:object_r:system_file:s0
+
+    log "Optimizing"
+    if [ "$ARCH" = x64 ]; then INS_SET=x86_64; else INS_SET=$ARCH; fi
+    mkdir -p "$MODPATH/system/framework/oat/$INS_SET"
+    dex2oat --dex-file="$PATCHED" --android-root=/system \
+        --instruction-set="$INS_SET" --oat-file="$MODPATH/system/framework/oat/$INS_SET/$TARGET_JAR_BASE.odex" \
+        --app-image-file="$MODPATH/system/framework/oat/$INS_SET/$TARGET_JAR_BASE.art" --no-generate-debug-info \
+        --generate-mini-debug-info || {
+        D2O_LOG=$(logcat -d -s "dex2oat")
+        ui_print "$D2O_LOG"
+        abort "dex2oat failed."
     }
-.end annotation
-invoke-static {}, Ljava/util/Collections;->emptyList()Ljava/util/List;
-move-result-object p1
-return-object p1'
-    patch '\.method .*notifyScreenshotListeners(I)Ljava/util/List;' "$notifyScreenshotListenersCode"
-fi
+    for ext in odex vdex art; do
+        set_perm "$MODPATH/system/framework/oat/$INS_SET/$TARGET_JAR_BASE.${ext}" 0 0 644 u:object_r:system_file:s0
+    done
 
-ui_print "* Re-assembling"
-SERR=$(ANDROID_DATA="$TMPPATH" CLASSPATH="$MODPATH/util/smali.jar" app_process "$MODPATH" \
-    com.android.tools.smali.smali.Main a -a "$API" "$TMPPATH/services-da/$TARGET_CLASS" \
-    -o "$TMPPATH/services/$TARGET_CLASS.dex" 2>&1)
-if [ "$SERR" ]; then abort "ERROR: $SERR"; fi
-
-ui_print "* Zipping"
-cd "$TMPPATH/services/" || abort "unreachable1"
-zip -q -0 -r "$TMPPATH/services-patched.zip" ./
-cd "$MODPATH" || abort "unreachable2"
-
-ui_print "* Zip aligning"
-zipalign -p -z 4 "$TMPPATH/services-patched.zip" "$MODPATH/system/framework/services.jar"
-set_perm "$MODPATH/system/framework/services.jar" 0 0 644 u:object_r:system_file:s0
-
-ui_print "* Optimizing"
-if [ "$ARCH" = x64 ]; then INS_SET=x86_64; else INS_SET=$ARCH; fi
-mkdir "$MODPATH/system/framework/oat/$INS_SET"
-dex2oat --dex-file="$MODPATH/system/framework/services.jar" --android-root=/system \
-    --instruction-set="$INS_SET" --oat-file="$MODPATH/system/framework/oat/$INS_SET/services.odex" \
-    --app-image-file="$MODPATH/system/framework/oat/$INS_SET/services.art" --no-generate-debug-info \
-    --generate-mini-debug-info || {
-    D2O_LOG=$(logcat -d -s "dex2oat")
-    ui_print "$D2O_LOG"
-    abort "* dex2oat failed."
+    rm -r "$TMPPATH"
+    rm "/data/dalvik-cache/$INS_SET/system@framework@$TARGET_JAR@classes.dex" 2>/dev/null || :
+    rm "/data/dalvik-cache/$INS_SET/system@framework@$TARGET_JAR@classes.vdex" 2>/dev/null || :
 }
-for ext in odex vdex art; do
-    set_perm "$MODPATH/system/framework/oat/$INS_SET/services.${ext}" 0 0 644 u:object_r:system_file:s0
-done
 
-ui_print "* Cleanup"
-rm -r "$TMPPATH" "$MODPATH/util"
-rm "/data/dalvik-cache/$INS_SET/system@framework@services.jar@classes.dex" 2>/dev/null || :
-rm "/data/dalvik-cache/$INS_SET/system@framework@services.jar@classes.vdex" 2>/dev/null || :
+main "services.jar" || abort
+if [ -f "/system/framework/semwifi-service.jar" ] \
+    || [ -f "$NVBASE/modules/flagsecurepatcher/semwifi-service.jar.bak" ]; then
+    ui_print ""
+    log "OneUI detected. Patching semwifi-service.jar"
+    main "semwifi-service.jar" || abort
+fi
+rm -r "$MODPATH/util"
 
 ui_print ""
 ui_print "  by github.com/j-hc"
