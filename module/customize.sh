@@ -35,7 +35,7 @@ patch() {
     signature="$1"
     code="$2"
     TARGET=$(grep -rn -x "$signature" "$TMPPATH/services-da" | grep -v 'abstract') || abort "Method not found"
-    [ "$(echo "$TARGET" | wc -l)" = 1 ] || abort "Multiple definitons: ${TARGET}"
+    [ "$(echo "$TARGET" | wc -l)" = 1 ] || abort "Multiple definitions: ${TARGET}"
     TARGET_NR="${TARGET%:*}"
     TARGET_NR="${TARGET_NR##*:}"
     TARGET_SMALI="${TARGET%%:*}"
@@ -103,10 +103,10 @@ set_perm "$MODPATH/system/framework/services.jar" 0 0 644 u:object_r:system_file
 ui_print "* Optimizing"
 if [ "$ARCH" = x64 ]; then INS_SET=x86_64; else INS_SET=$ARCH; fi
 mkdir "$MODPATH/system/framework/oat/$INS_SET"
-dex2oat --dex-file="$MODPATH/system/framework/services.jar" --profile-file="/system/framework/services.jar.prof" \
+dex2oat --dex-file="$MODPATH/system/framework/services.jar" --android-root=/system \
     --instruction-set="$INS_SET" --oat-file="$MODPATH/system/framework/oat/$INS_SET/services.odex" \
     --app-image-file="$MODPATH/system/framework/oat/$INS_SET/services.art" --no-generate-debug-info \
-    --generate-mini-debug-info --android-root=/system || {
+    --generate-mini-debug-info || {
     D2O_LOG=$(logcat -d -s "dex2oat")
     ui_print "$D2O_LOG"
     abort "* dex2oat failed."
