@@ -69,6 +69,9 @@ NR == METHOD_NR {
     mv -f "$SMALI_PATCHED" "$TARGET_SMALI"
 }
 
+ISL_patched=0
+NSL_patched=0
+
 main() {
     TARGET_JAR="$1"
     TARGET_JAR_BASE="${TARGET_JAR%.*}"
@@ -84,18 +87,19 @@ main() {
     unzip -q "$TMPPATH/$TARGET_JAR" -d "$TMPPATH/$TARGET_JAR_BASE"
     [ -f "$TMPPATH/$TARGET_JAR_BASE/classes.dex" ] || abort "ROM is not supported"
 
-    patch_succ=0
-    log "Patching isSecureLocked"
-    isSecureLockedCode='
+    if [ $ISL_patched = 0 ]; then
+        log "Patching isSecureLocked"
+        isSecureLockedCode='
     .locals 1
     const/4 v0, 0x0
     return v0'
-    if patch 'isSecureLocked(.*)Z' "$isSecureLockedCode"; then
-        log "Patched successfully "
-        patch_succ=1
-    else loge "isSecureLocked patch failed"; fi
+        if patch 'isSecureLocked(.*)Z' "$isSecureLockedCode"; then
+            log "Patched successfully "
+            ISL_patched=1
+        else loge "isSecureLocked patch failed"; fi
+    fi
 
-    if [ "$API" -ge 34 ]; then
+    if [ "$API" -ge 34 ] && [ $NSL_patched = 0 ]; then
         log "Patching notifyScreenshotListeners (API >= 34)"
         notifyScreenshotListenersCode='
     .locals 1
@@ -112,11 +116,11 @@ main() {
     return-object p1'
         if patch 'notifyScreenshotListeners(I)Ljava/util/List;' "$notifyScreenshotListenersCode"; then
             log "Patched successfully "
-            patch_succ=1
+            NSL_patched=1
         else loge "notifyScreenshotListeners patch failed"; fi
     fi
+    if [ $NSL_patched = 0 ] && [ $ISL_patched = 0 ]; then abort "All patches failed"; fi
 
-    [ $patch_succ = 0 ] && abort "All patches failed"
     for CL in "$TMPPATH/$TARGET_JAR_BASE-da"/classes*; do
         CLBASE="${CL##*/}"
         log "Re-assembling $CLBASE.dex"
@@ -153,8 +157,9 @@ main() {
 }
 
 main "services.jar" || abort
-if [ -f "/system/framework/semwifi-service.jar" ] \
-    || [ -f "$NVBASE/modules/flagsecurepatcher/semwifi-service.jar.bak" ]; then
+
+if { { [ $NSL_patched = 0 ] && [ "$API" -ge 34 ]; } || [ $ISL_patched = 0 ]; } \
+    && [ -f "/system/framework/semwifi-service.jar" ]; then
     ui_print ""
     log "OneUI detected. Patching semwifi-service.jar"
     main "semwifi-service.jar" || abort
