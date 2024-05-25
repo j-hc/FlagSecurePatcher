@@ -25,7 +25,7 @@ get_class() {
     # $SIG - $DEX $CLASS
     for DEX in "$TMPPATH/$TARGET_JAR_BASE"/classes*; do
         CLASS=$(baksmali l m "$DEX" -a "$API" | grep ";->$1" | grep -Fv '$') || continue
-        CLASS="${CLASS#?}" CLASS="${CLASS%%;*}"
+        CLASS="${CLASS#L}" CLASS="${CLASS%%;*}"
         return 0
     done
     return 1
@@ -152,8 +152,8 @@ main() {
     done
 
     rm -r "$TMPPATH"
-    rm "/data/dalvik-cache/$INS_SET/system@framework@$TARGET_JAR@classes.dex" 2>/dev/null || :
-    rm "/data/dalvik-cache/$INS_SET/system@framework@$TARGET_JAR@classes.vdex" 2>/dev/null || :
+    rm /data/dalvik-cache/"$INS_SET"/system@framework@"$TARGET_JAR"@classes.* 2>/dev/null || :
+    rm /data/misc/apexdata/com.android.art/dalvik-cache/"$INS_SET"/system@framework@"$TARGET_JAR"@classes.* 2>/dev/null || :
 }
 
 main "services.jar" || abort
