@@ -8,6 +8,8 @@ alias zipalign='LD_LIBRARY_PATH=$LIBPATH $MODPATH/util/bin/$ARCH/zipalign'
 chmod -R 755 "$MODPATH/util/"
 TMPPATH="$MODPATH/tmp"
 
+BDATE_PROP=$(getprop ro.build.date.utc)
+
 log() { ui_print "[+] $1"; }
 loge() { ui_print "[-] $1"; }
 
@@ -78,9 +80,9 @@ main() {
 
     mkdir "$TMPPATH"
     cp "$(magisk --path 2>/dev/null)/.magisk/mirror/system/framework/$TARGET_JAR" "$TMPPATH" 2>/dev/null \
-        || cp "$NVBASE/modules/flagsecurepatcher/$TARGET_JAR.bak" "$TMPPATH/$TARGET_JAR" 2>/dev/null \
+        || cp "$NVBASE/modules/flagsecurepatcher/${TARGET_JAR}.bak.${BDATE_PROP}" "$TMPPATH/$TARGET_JAR" 2>/dev/null \
         || cp "/system/framework/$TARGET_JAR" "$TMPPATH"
-    cp "$TMPPATH/$TARGET_JAR" "$MODPATH/$TARGET_JAR.bak"
+    cp "$TMPPATH/$TARGET_JAR" "$MODPATH/${TARGET_JAR}.bak.${BDATE_PROP}"
 
     log "Extracting $TARGET_JAR_BASE"
     mkdir "$TMPPATH/$TARGET_JAR_BASE"
@@ -119,7 +121,6 @@ main() {
             NSL_patched=1
         else loge "notifyScreenshotListeners patch failed"; fi
     fi
-    if [ $NSL_patched = 0 ] && [ $ISL_patched = 0 ]; then abort "All patches failed"; fi
 
     for CL in "$TMPPATH/$TARGET_JAR_BASE-da"/classes*; do
         CLBASE="${CL##*/}"
@@ -164,6 +165,8 @@ if { { [ $NSL_patched = 0 ] && [ "$API" -ge 34 ]; } || [ $ISL_patched = 0 ]; } \
     log "OneUI detected. Patching semwifi-service.jar"
     main "semwifi-service.jar" || abort
 fi
+if [ $NSL_patched = 0 ] && [ $ISL_patched = 0 ]; then abort "All patches failed"; fi
+
 rm -r "$MODPATH/util"
 
 ui_print ""
