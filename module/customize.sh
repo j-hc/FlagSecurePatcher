@@ -15,18 +15,19 @@ loge() { ui_print "[-] $1"; }
 
 baksmali() {
     ANDROID_DATA="$TMPPATH" CLASSPATH="$MODPATH/util/baksmali.jar" app_process "$MODPATH" \
-        com.android.tools.smali.baksmali.Main "$@" || abort "baksmali err: $SERR"
+        com.android.tools.smali.baksmali.Main "$@" || abort "baksmali err"
 }
 
 smali() {
     ANDROID_DATA="$TMPPATH" CLASSPATH="$MODPATH/util/smali.jar" app_process "$MODPATH" \
-        com.android.tools.smali.smali.Main "$@" || abort "smali err: $SERR"
+        com.android.tools.smali.smali.Main "$@" || abort "smali err"
 }
 
 get_class() {
-    # $SIG - $DEX $CLASS
+    # $SIG -- $DEX $CLASS
     for DEX in "$TMPPATH/$TARGET_JAR_BASE"/classes*; do
         CLASS=$(baksmali l m "$DEX" -a "$API" | grep ";->$1" | grep -Fv '$') || continue
+        [ "$(echo "$CLASS" | wc -l)" = 1 ] || abort "Multiple definitions (get_class): '${CLASS}'"
         CLASS="${CLASS#L}" CLASS="${CLASS%%;*}"
         return 0
     done
@@ -50,7 +51,9 @@ patch() {
         loge "Method not found in class"
         return 1
     }
-    [ "$(echo "$METHOD" | wc -l)" = 1 ] || abort "Multiple definitions: ${METHOD}"
+    [ "$(echo "$METHOD" | wc -l)" = 1 ] || abort "Multiple definitions: '${METHOD}'"
+    echo "$METHOD" | grep -Fvq abstract >/dev/null 2>/dev/null || abort "Abstract method: '${METHOD}'"
+
     METHOD_NR="${METHOD%:*}"
     SMALI_PATCHED="$TMPPATH/${TARGET_SMALI##*/}"
 
