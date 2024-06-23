@@ -45,7 +45,7 @@ patch() {
     TARGET_SMALI="$TMPPATH/$TARGET_JAR_BASE-da/$DEXBASE/$CLASS.smali"
     [ -d "$TMPPATH/$TARGET_JAR_BASE-da/$DEXBASE" ] || {
         log "Disassembling $DEXBASE.dex"
-        baksmali d "$DEX" -o "$TMPPATH/$TARGET_JAR_BASE-da/$DEXBASE" --di False -a "$API"
+        baksmali d "$DEX" -o "$TMPPATH/$TARGET_JAR_BASE-da/$DEXBASE" -l -a "$API"
     }
     METHOD=$(grep -nx "\.method .*$signature" "$TARGET_SMALI") || {
         loge "Method not found in class"
@@ -108,14 +108,6 @@ main() {
         log "Patching notifyScreenshotListeners (API >= 34)"
         notifyScreenshotListenersCode='
     .locals 1
-    .annotation system Ldalvik/annotation/Signature;
-        value = {
-            "(I)",
-            "Ljava/util/List<",
-            "Landroid/content/ComponentName;",
-            ">;"
-        }
-    .end annotation
     invoke-static {}, Ljava/util/Collections;->emptyList()Ljava/util/List;
     move-result-object p1
     return-object p1'
