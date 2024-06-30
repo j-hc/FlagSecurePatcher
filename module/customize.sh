@@ -35,7 +35,7 @@ get_class() {
 }
 
 patch() {
-    signature="$1" code="$2"
+    signature=$1 code=$2 locals=$3
 
     get_class "$signature" || {
         loge "Method not found"
@@ -57,14 +57,27 @@ patch() {
     METHOD_NR="${METHOD%:*}"
     SMALI_PATCHED="$TMPPATH/${TARGET_SMALI##*/}"
 
-    CODE="$code" awk -v METHOD_NR="$METHOD_NR" '
+    CODE="$code" awk -v METHOD_NR="$METHOD_NR" -v LOCALS="$locals" '
 NR == METHOD_NR {
     in_method = 1
     print
-    print ENVIRON["CODE"]
+    print "    .locals " LOCALS
+    next
+    if (in_annotation) {
+        print
+        next
+    }
+    print
+    next
+}
+/\.annotation/ { in_annotation = 1 }
+in_annotation {
+    print
+    if ($0 ~ /\.end annotation/) in_annotation = 0
     next
 }
 /\.end method/ && in_method {
+    print ENVIRON["CODE"]
     print
     in_method = 0
     next
@@ -78,7 +91,7 @@ ISL_patched=0
 NSL_patched=0
 
 main() {
-    TARGET_JAR="$1"
+    TARGET_JAR=$1
     TARGET_JAR_BASE="${TARGET_JAR%.*}"
 
     mkdir "$TMPPATH"
@@ -97,10 +110,9 @@ main() {
     if [ $ISL_patched = 0 ]; then
         log "Patching isSecureLocked"
         isSecureLockedCode='
-    .locals 1
     const/4 v0, 0x0
     return v0'
-        if patch 'isSecureLocked(.*)Z' "$isSecureLockedCode"; then
+        if patch 'isSecureLocked(.*)Z' "$isSecureLockedCode" 1; then
             log "Patched successfully "
             ISL_patched=1
         else loge "isSecureLocked patch failed"; fi
@@ -109,11 +121,10 @@ main() {
     if [ "$API" -ge 34 ] && [ $NSL_patched = 0 ]; then
         log "Patching notifyScreenshotListeners (API >= 34)"
         notifyScreenshotListenersCode='
-    .locals 1
     invoke-static {}, Ljava/util/Collections;->emptyList()Ljava/util/List;
     move-result-object p1
     return-object p1'
-        if patch 'notifyScreenshotListeners(I)Ljava/util/List;' "$notifyScreenshotListenersCode"; then
+        if patch 'notifyScreenshotListeners(I)Ljava/util/List;' "$notifyScreenshotListenersCode" 1; then
             log "Patched successfully "
             NSL_patched=1
         else loge "notifyScreenshotListeners patch failed"; fi
