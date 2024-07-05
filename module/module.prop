@@ -1,7 +1,7 @@
 id=flagsecurepatcher
 name=FlagSecurePatcher
-version=r10
-versionCode=10
+version=r11
+versionCode=11
 author=j-hc
 description=Disable flag secure and screenshot listener
 updateJson=https://raw.githubusercontent.com/j-hc/FlagSecurePatcher/master/update.json
