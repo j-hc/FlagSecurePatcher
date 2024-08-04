@@ -96,8 +96,8 @@ main() {
 
     mkdir "$TMPPATH"
     cp "$(magisk --path 2>/dev/null)/.magisk/mirror/system/framework/$TARGET_JAR" "$TMPPATH" 2>/dev/null \
-        || cp "$NVBASE/modules/flagsecurepatcher/${TARGET_JAR}.bak.${BDATE_PROP}" "$TMPPATH/$TARGET_JAR" 2>/dev/null \
-        || if [ ! -d "$NVBASE/modules/flagsecurepatcher" ]; then
+        || cp "/data/adb/modules/flagsecurepatcher/${TARGET_JAR}.bak.${BDATE_PROP}" "$TMPPATH/$TARGET_JAR" 2>/dev/null \
+        || if [ ! -d "/data/adb/modules/flagsecurepatcher" ]; then
             cp "/system/framework/$TARGET_JAR" "$TMPPATH"
         else abort "No backup was found. Disable the module, reboot and reflash."; fi
     cp "$TMPPATH/$TARGET_JAR" "$MODPATH/${TARGET_JAR}.bak.${BDATE_PROP}"
