@@ -47,7 +47,7 @@ patch() {
         log "Disassembling $DEXBASE.dex"
         baksmali d "$DEX" -o "$TMPPATH/$TARGET_JAR_BASE-da/$DEXBASE" -l -a "$API"
     }
-    METHOD=$(grep -nx "\.method .*$signature" "$TARGET_SMALI") || {
+    METHOD=$(grep -nx "\.method .*$signature" "$TARGET_SMALI" 2>/dev/null) || {
         loge "Method not found in class"
         return 1
     }
@@ -89,25 +89,30 @@ in_annotation {
 
 ISL_patched=0
 NSL_patched=0
+ACD_patched=1
 
 main() {
     TARGET_JAR=$1
-    TARGET_JAR_BASE="${TARGET_JAR%.*}"
+    TARGET_JAR_NAME=${TARGET_JAR##*/}
+    TARGET_JAR_BASE=${TARGET_JAR_NAME%.*}
+    TARGET_JAR_PATH=${MODPATH}${TARGET_JAR%/*}
 
+    mkdir -p "${TARGET_JAR_PATH}/oat"
     mkdir "$TMPPATH"
-    cp "$(magisk --path 2>/dev/null)/.magisk/mirror/system/framework/$TARGET_JAR" "$TMPPATH" 2>/dev/null \
-        || cp "/data/adb/modules/flagsecurepatcher/${TARGET_JAR}.bak.${BDATE_PROP}" "$TMPPATH/$TARGET_JAR" 2>/dev/null \
-        || if [ ! -d "/data/adb/modules/flagsecurepatcher" ]; then
-            cp "/system/framework/$TARGET_JAR" "$TMPPATH"
-        else abort "No backup was found. Disable the module, reboot and reflash."; fi
-    cp "$TMPPATH/$TARGET_JAR" "$MODPATH/${TARGET_JAR}.bak.${BDATE_PROP}"
+
+    cp "$(magisk --path 2>/dev/null)/.magisk/mirror${TARGET_JAR}" "$TMPPATH" 2>/dev/null ||
+        cp "/data/adb/modules/flagsecurepatcher/${TARGET_JAR_NAME}.bak.${BDATE_PROP}" "$TMPPATH/$TARGET_JAR_NAME" 2>/dev/null ||
+        if [ ! -d "/data/adb/modules/flagsecurepatcher" ]; then
+            cp "$TARGET_JAR" "$TMPPATH"
+        else abort "No backup jar was found. Disable the module, reboot and reflash."; fi
+    cp "$TMPPATH/$TARGET_JAR_NAME" "$MODPATH/${TARGET_JAR_NAME}.bak.${BDATE_PROP}"
 
     log "Extracting $TARGET_JAR_BASE"
     mkdir "$TMPPATH/$TARGET_JAR_BASE"
-    unzip -q "$TMPPATH/$TARGET_JAR" -d "$TMPPATH/$TARGET_JAR_BASE"
+    unzip -q "$TMPPATH/$TARGET_JAR_NAME" -d "$TMPPATH/$TARGET_JAR_BASE"
     [ -f "$TMPPATH/$TARGET_JAR_BASE/classes.dex" ] || abort "ROM is not supported"
 
-    if [ $ISL_patched = 0 ]; then
+    if [ $ACD_patched = 1 ] && [ $ISL_patched = 0 ]; then
         log "Patching isSecureLocked"
         isSecureLockedCode='
     const/4 v0, 0x0
@@ -118,7 +123,7 @@ main() {
         else loge "isSecureLocked patch failed"; fi
     fi
 
-    if [ "$API" -ge 34 ] && [ $NSL_patched = 0 ]; then
+    if [ $ACD_patched = 1 ] && [ "$API" -ge 34 ] && [ $NSL_patched = 0 ]; then
         log "Patching notifyScreenshotListeners (API >= 34)"
         notifyScreenshotListenersCode='
     invoke-static {}, Ljava/util/Collections;->emptyList()Ljava/util/List;
@@ -128,6 +133,14 @@ main() {
             log "Patched successfully "
             NSL_patched=1
         else loge "notifyScreenshotListeners patch failed"; fi
+    fi
+
+    if [ $ACD_patched = 0 ]; then
+        log "Patching notAllowCaptureDisplay"
+        if patch 'notAllowCaptureDisplay(.*)Z' "$isSecureLockedCode" 1; then
+            log "Patched successfully "
+            ACD_patched=1
+        else loge "notAllowCaptureDisplay patch failed"; fi
     fi
 
     for CL in "$TMPPATH/$TARGET_JAR_BASE-da"/classes*; do
@@ -141,39 +154,44 @@ main() {
     zip -q0r "$TMPPATH/$TARGET_JAR_BASE-patched.zip" .
     cd "$MODPATH"
 
-    PATCHED="$MODPATH/system/framework/$TARGET_JAR"
+    PATCHED="${MODPATH}${TARGET_JAR}"
     zipalign -p -z 4 "$TMPPATH/$TARGET_JAR_BASE-patched.zip" "$PATCHED"
     set_perm "$PATCHED" 0 0 644 u:object_r:system_file:s0
 
     log "Optimizing"
     if [ "$ARCH" = x64 ]; then INS_SET=x86_64; else INS_SET=$ARCH; fi
-    mkdir -p "$MODPATH/system/framework/oat/$INS_SET"
+    mkdir -p "${TARGET_JAR_PATH}/oat/$INS_SET"
     dex2oat --dex-file="$PATCHED" --android-root=/system \
-        --instruction-set="$INS_SET" --oat-file="$MODPATH/system/framework/oat/$INS_SET/$TARGET_JAR_BASE.odex" \
-        --app-image-file="$MODPATH/system/framework/oat/$INS_SET/$TARGET_JAR_BASE.art" --no-generate-debug-info \
+        --instruction-set="$INS_SET" --oat-file="${TARGET_JAR_PATH}/oat/$INS_SET/$TARGET_JAR_BASE.odex" \
+        --app-image-file="${TARGET_JAR_PATH}/oat/$INS_SET/$TARGET_JAR_BASE.art" --no-generate-debug-info \
         --generate-mini-debug-info || {
         D2O_LOG=$(logcat -d -s "dex2oat")
         ui_print "$D2O_LOG"
         abort "dex2oat failed."
     }
     for ext in odex vdex art; do
-        set_perm "$MODPATH/system/framework/oat/$INS_SET/$TARGET_JAR_BASE.${ext}" 0 0 644 u:object_r:system_file:s0
+        set_perm "${TARGET_JAR_PATH}/oat/$INS_SET/$TARGET_JAR_BASE.${ext}" 0 0 644 u:object_r:system_file:s0
     done
 
     rm -r "$TMPPATH"
-    rm /data/dalvik-cache/"$INS_SET"/system@framework@"$TARGET_JAR"@classes.* 2>/dev/null || :
-    rm /data/misc/apexdata/com.android.art/dalvik-cache/"$INS_SET"/system@framework@"$TARGET_JAR"@classes.* 2>/dev/null || :
+    TARGET_OAT_NAME=${TARGET_JAR//\//@} TARGET_OAT_NAME=${TARGET_OAT_NAME:1}
+    rm /data/dalvik-cache/"$INS_SET"/"$TARGET_OAT_NAME"@classes.* 2>/dev/null || :
+    rm /data/misc/apexdata/com.android.art/dalvik-cache/"$INS_SET"/"$TARGET_OAT_NAME"@classes.* 2>/dev/null || :
 }
 
-main "services.jar" || abort
+main "/system/framework/services.jar" || abort
 
-if { { [ $NSL_patched = 0 ] && [ "$API" -ge 34 ]; } || [ $ISL_patched = 0 ]; } \
-    && [ -f "/system/framework/semwifi-service.jar" ]; then
+if [ -f "/system/framework/semwifi-service.jar" ]; then
     ui_print ""
-    log "OneUI detected. Patching semwifi-service.jar"
-    main "semwifi-service.jar" || abort
+    log "OneUI detected: Patching semwifi-service.jar"
+    main "/system/framework/semwifi-service.jar" || abort
+elif [ -f "/system_ext/framework/miui-services.jar" ]; then
+    ui_print ""
+    log "HyperOS detected: Patching miui-services.jar"
+    ACD_patched=0
+    main "/system_ext/framework/miui-services.jar" || abort
 fi
-if [ $NSL_patched = 0 ] && [ $ISL_patched = 0 ]; then abort "All patches failed"; fi
+if [ $NSL_patched = 0 ] && [ $ISL_patched = 0 ] && [ $ACD_patched = 0 ]; then abort "All patches failed"; fi
 
 rm -r "$MODPATH/util"
 
