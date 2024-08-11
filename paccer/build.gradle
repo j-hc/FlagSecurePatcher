@@ -1,0 +1,14 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.jhc'
+version = '1.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation files('libs/dexlib2-3.0.7-0d1f58f4-dirty.jar');
+}
