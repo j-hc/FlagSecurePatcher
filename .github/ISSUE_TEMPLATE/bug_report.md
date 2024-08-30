@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-**Android version and vendor:**
+**enter Android version:**
 
-**fw.zip from this command:**  
+**get and upload fw.zip in termux with this command**  
 `pkg install zip && cd /system/framework/ && su -c $(command -v zip) -r9 /sdcard/fw.zip .`

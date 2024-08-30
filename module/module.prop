@@ -3,5 +3,5 @@ name=FlagSecurePatcher
 version=r13
 versionCode=13
 author=j-hc
-description=Disable flag secure and screenshot listener
+description=Prevent apps from blocking and listening to your screenshots
 updateJson=https://raw.githubusercontent.com/j-hc/FlagSecurePatcher/master/update.json
