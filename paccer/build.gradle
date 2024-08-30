@@ -10,5 +10,5 @@ repositories {
 }
 
 dependencies {
-    implementation files('libs/dexlib2-3.0.7-0d1f58f4-dirty.jar');
+    implementation files('libs/dexlib2-3.0.7.jar');
 }

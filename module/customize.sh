@@ -12,8 +12,8 @@ log() { ui_print "[+] $1"; }
 loge() { ui_print "[-] $1"; }
 
 paccer() {
-    CLASSPATH="$MODPATH/util/paccer.jar:$MODPATH/util/java_lib/dexlib2.jar:$MODPATH/util/java_lib/guava.jar" \
-        ANDROID_DATA="$TMPPATH" app_process "$MODPATH" com.jhc.Main "$@"
+    CLASSPATH="$MODPATH/util/paccer.jar:$MODPATH/util/dexlib2.jar" ANDROID_DATA="$TMPPATH" \
+        app_process "$MODPATH" com.jhc.Main "$@"
 }
 
 main() {
