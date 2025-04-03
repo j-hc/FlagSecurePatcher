@@ -35,7 +35,7 @@ main() {
         cp "/data/adb/modules/flagsecurepatcher/${TARGET_JAR_NAME}.bak.${BDATE_PROP}" "$TMPPATH/$TARGET_JAR_NAME" 2>/dev/null ||
         if [ ! -d "/data/adb/modules/flagsecurepatcher/system/" ]; then
             cp "$TARGET_JAR" "$TMPPATH" || abort "not found: '$TARGET_JAR'"
-        else abort "No backup jar was found. Disable the module, reboot and reflash."; fi
+        else abort "Stock jar was not found. Uninstall the module, reboot and reflash."; fi
     cp "$TMPPATH/$TARGET_JAR_NAME" "$MODPATH/${TARGET_JAR_NAME}.bak.${BDATE_PROP}"
 
     log "Extracting $TARGET_JAR_BASE"
