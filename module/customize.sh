@@ -17,10 +17,6 @@ paccer() {
 }
 
 main() {
-    ISL_patched=0
-    NSL_patched=0
-    ACD_patched=0
-
     TARGET_JAR=$1
     TARGET_JAR_NAME=${TARGET_JAR##*/}
     TARGET_JAR_BASE=${TARGET_JAR_NAME%.*}
@@ -44,25 +40,17 @@ main() {
     [ -f "$TMPPATH/$TARGET_JAR_BASE/classes.dex" ] || abort "ROM is not supported"
 
     log "Patching"
+    PATCHED_ONCE=0
     for DEX in "$TMPPATH/$TARGET_JAR_BASE"/classes*; do
         if ! OP=$(paccer "$DEX" "$DEX" "$TARGET_JAR_NAME" "$API" 2>&1); then
             abort "ERROR: paccer failed '$OP'"
         fi
-        echo "$OP" | grep -Fq notifyScreenshotListeners && {
-            log "Patched: notifyScreenshotListeners"
-            NSL_patched=1
-        }
-        echo "$OP" | grep -Fq isSecureLocked && {
-            log "Patched: isSecureLocked"
-            ISL_patched=1
-        }
-        echo "$OP" | grep -Fq notAllowCaptureDisplay && {
-            log "Patched: notAllowCaptureDisplay"
-            ACD_patched=1
-        }
+        while IFS= read -r line; do
+            log "Patched: $line"
+            PATCHED_ONCE=1
+        done <<< "$OP"
     done
-
-    if [ $NSL_patched = 0 ] && [ $ISL_patched = 0 ] && [ $ACD_patched = 0 ]; then
+    if [ PATCHED_ONCE -eq 0 ]; then
         loge "Nothing was patched"
         rm -r "$TMPPATH"
         return 0
