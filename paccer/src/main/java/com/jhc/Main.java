@@ -45,6 +45,7 @@ public class Main {
     private static Patch[] patches = {
             new Patch("services.jar", new PatchMethod[] {
                     new PatchMethod("isSecureLocked", null, "Z", retFalse()),
+                    new PatchMethod("isAllowAudioPlaybackCapture", null, "Z", retTrue()),
                     new PatchMethod("notifyScreenshotListeners", new String[] { "I" }, "Ljava/util/List;",
                             retEmptyList())
             }),
@@ -83,6 +84,13 @@ public class Main {
         methodImpl.addInstruction(new BuilderInstruction11x(
                 Opcode.RETURN_OBJECT,
                 2));
+        return (MethodImplementation) methodImpl;
+    }
+
+    private static MethodImplementation retTrue() {
+        MutableMethodImplementation methodImpl = new MutableMethodImplementation(3);
+        methodImpl.addInstruction(new BuilderInstruction11n(Opcode.CONST_4, 0, 1));
+        methodImpl.addInstruction(new BuilderInstruction11x(Opcode.RETURN, 0));
         return (MethodImplementation) methodImpl;
     }
 
