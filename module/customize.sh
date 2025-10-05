@@ -3,6 +3,7 @@ set -eu
 LIBPATH="$MODPATH/util/lib/${ARCH}"
 alias zip='LD_LIBRARY_PATH=$LIBPATH $MODPATH/util/bin/$ARCH/zip'
 alias zipalign='LD_LIBRARY_PATH=$LIBPATH $MODPATH/util/bin/$ARCH/zipalign'
+alias paccer='LD_LIBRARY_PATH=$LIBPATH $MODPATH/util/bin/$ARCH/paccer'
 chmod -R 755 "$MODPATH/util/"
 TMPPATH="$MODPATH/tmp"
 
@@ -10,11 +11,6 @@ BDATE_PROP=$(getprop ro.build.date.utc)
 
 log() { ui_print "[+] $1"; }
 loge() { ui_print "[-] $1"; }
-
-paccer() {
-    CLASSPATH="$MODPATH/util/paccer.jar:$MODPATH/util/dexlib2.jar" ANDROID_DATA="$TMPPATH" \
-        app_process "$MODPATH" com.jhc.Main "$@"
-}
 
 main() {
     TARGET_JAR=$1
@@ -40,18 +36,21 @@ main() {
     [ -f "$TMPPATH/$TARGET_JAR_BASE/classes.dex" ] || abort "ROM is not supported"
 
     log "Patching"
-    PATCHED_ONCE=0
+    PATCHED_OK=0
     for DEX in "$TMPPATH/$TARGET_JAR_BASE"/classes*; do
-        if ! OP=$(paccer "$DEX" "$DEX" "$TARGET_JAR_NAME" "$API" 2>&1); then
-            abort "ERROR: paccer failed '$OP'"
+        if ! OP=$(paccer "$DEX" "$DEX" "$TARGET_JAR_NAME" 2>&1); then
+            loge "ERROR: paccer failed (${DEX##*/}):"
+            abort "$OP"
         fi
-        while IFS= read -r line; do
-            log "Patched: $line"
-            PATCHED_ONCE=1
-        done <<< "$OP"
+        if [ "$OP" ]; then
+            PATCHED_OK=1
+            printf "%s\n" "$OP" | while read -r l; do
+                log "Patched: $l"
+            done
+        fi
     done
-    if [ PATCHED_ONCE -eq 0 ]; then
-        loge "Nothing was patched"
+    if [ $PATCHED_OK = 0 ]; then
+        loge "No patch was found for $TARGET_JAR_BASE"
         rm -r "$TMPPATH"
         return 0
     fi
@@ -94,11 +93,11 @@ main "/system/framework/services.jar" || abort
 
 if [ -f "/system/framework/semwifi-service.jar" ]; then
     ui_print ""
-    log "OneUI detected: Patching semwifi-service.jar"
+    log "OneUI detected: semwifi-service.jar"
     main "/system/framework/semwifi-service.jar" || abort
 elif [ -f "/system_ext/framework/miui-services.jar" ]; then
     ui_print ""
-    log "HyperOS detected: Patching miui-services.jar"
+    log "HyperOS detected: miui-services.jar"
     main "/system_ext/framework/miui-services.jar" || abort
 fi
 

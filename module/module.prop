@@ -1,7 +1,7 @@
 id=flagsecurepatcher
 name=FlagSecurePatcher
-version=r15
-versionCode=15
+version=r16
+versionCode=16
 author=j-hc
 description=Prevent apps from blocking and listening to your screenshots
 updateJson=https://raw.githubusercontent.com/j-hc/FlagSecurePatcher/master/update.json
