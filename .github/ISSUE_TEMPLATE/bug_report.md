@@ -8,9 +8,8 @@ assignees: ''
 ---
 Obtain everything listed below for a bug report:
 * Android version and ROM
-* Get the fw.zip and fw-ext.zip in termux with these commands then upload and link it here  
-`pkg install zip && cd /system/framework/ && su -c $(command -v zip) -r9 /sdcard/fw.zip .`  
-`pkg install zip && cd /system_ext/framework/ && su -c $(command -v zip) -r9 /sdcard/fw-ext.zip .`  
+* Get the fw.zip with these commands in termux then upload and link it here  
+`zip --version || pkg install zip; rm /sdcard/fw.zip; su -c $(command -v zip) -r9 /sdcard/fw.zip /system/framework/ -x '*/oat/*' && su -c $(command -v zip) -r9 /sdcard/fw.zip /system_ext/framework/ -x '*/oat/*'`  
 
 * Module flash logs
 * Logcat of the boot if you are getting a bootloop or random side-effects
