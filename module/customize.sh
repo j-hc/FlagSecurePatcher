@@ -12,8 +12,9 @@ BDATE_PROP=$(getprop ro.build.date.utc)
 log() { ui_print "[+] $1"; }
 loge() { ui_print "[-] $1"; }
 
-main() {
+run() {
     TARGET_JAR=$1
+    PATCHES_FOR_JAR=$2
     TARGET_JAR_NAME=${TARGET_JAR##*/}
     TARGET_JAR_BASE=${TARGET_JAR_NAME%.*}
     if [ "${TARGET_JAR:0:8}" = "/system/" ]; then
@@ -36,21 +37,21 @@ main() {
     [ -f "$TMPPATH/$TARGET_JAR_BASE/classes.dex" ] || abort "ROM is not supported"
 
     log "Patching"
-    PATCHED_OK=0
+    PATCHED_OK=false
     for DEX in "$TMPPATH/$TARGET_JAR_BASE"/classes*; do
-        if ! OP=$(paccer "$DEX" "$DEX" "$TARGET_JAR_NAME" 2>&1); then
-            loge "ERROR: paccer failed (${DEX##*/}):"
-            abort "$OP"
+        if ! OP=$(paccer "$DEX" "$DEX" "$PATCHES_FOR_JAR" 2>&1); then
+            abort "paccer error (${DEX##*/}): '$OP'"
         fi
         if [ "$OP" ]; then
-            PATCHED_OK=1
+            PATCHED_OK=true
             printf "%s\n" "$OP" | while read -r l; do
-                log "Patched: $l"
+                log "(${DEX##*/}) $l"
             done
+            ui_print ""
         fi
     done
-    if [ $PATCHED_OK = 0 ]; then
-        loge "No patch was found for $TARGET_JAR_BASE"
+    if [ $PATCHED_OK = false ]; then
+        loge "No patch was successful for $TARGET_JAR_BASE"
         rm -r "$TMPPATH"
         return 0
     fi
@@ -89,16 +90,28 @@ main() {
     rm /data/misc/apexdata/com.android.art/dalvik-cache/"$INS_SET"/"$TARGET_OAT_NAME"@classes.* 2>/dev/null || :
 }
 
-main "/system/framework/services.jar" || abort
+# patch definitions for specific methods, feel free to add yours
+services_PATCHES="
+isSecureLocked              :RET_FALSE;
+notifyScreenshotListeners   :RET_EMPTY_LIST;
+isAllowAudioPlaybackCapture :RET_TRUE;
+isScreenCaptureAllowed      :RET_TRUE;
+getScreenCaptureDisabled    :RET_FALSE;
+notAllowCaptureDisplay      :RET_FALSE;
+"
+semwifi_PATCHES="isSecureLocked:RET_FALSE;"
+miui_PATCHES="notAllowCaptureDisplay:RET_FALSE;"
+
+run "/system/framework/services.jar" "$services_PATCHES" || abort
 
 if [ -f "/system/framework/semwifi-service.jar" ]; then
     ui_print ""
     log "OneUI detected: semwifi-service.jar"
-    main "/system/framework/semwifi-service.jar" || abort
+    run "/system/framework/semwifi-service.jar" "$semwifi_PATCHES" || abort
 elif [ -f "/system_ext/framework/miui-services.jar" ]; then
     ui_print ""
     log "HyperOS detected: miui-services.jar"
-    main "/system_ext/framework/miui-services.jar" || abort
+    run "/system_ext/framework/miui-services.jar" "$miui_PATCHES" || abort
 fi
 
 if [ ! -d "$MODPATH/system/" ] && [ ! -d "$MODPATH/system_ext/" ]; then
