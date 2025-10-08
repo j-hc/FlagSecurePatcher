@@ -12,42 +12,67 @@
 #include "slicer/reader.h"
 #include "slicer/writer.h"
 
-enum PatchType { RET_EMPTY_LIST, RET_FALSE, RET_TRUE };
+enum class PatchType { RET_EMPTY_LIST, RET_FALSE, RET_TRUE };
+
+static inline bool patchTypeFromStr(const char* str, PatchType& t) {
+    if (strcmp(str, "RET_EMPTY_LIST") == 0) t = PatchType::RET_EMPTY_LIST;
+    else if (strcmp(str, "RET_TRUE") == 0) t = PatchType::RET_TRUE;
+    else if (strcmp(str, "RET_FALSE") == 0) t = PatchType::RET_FALSE;
+    else return false;
+    return true;
+}
+
+static inline const char* retTypeFromPatch(PatchType t) {
+    switch (t) {
+        case PatchType::RET_EMPTY_LIST:
+            return "Ljava/util/List;";
+        case PatchType::RET_FALSE:
+        case PatchType::RET_TRUE:
+            return "Z";
+        default:
+            assert(false && "unreachable");
+    }
+}
 
 struct PatchMethod {
-    const char* method_name;
-    const char* ret_type = nullptr;
-    const char* parent_name = nullptr;
-
+    std::string method_name;
+    std::string parent_name;
     PatchType patch_type;
 };
 
-struct PatchJar {
-    const char* jar_name;
-    std::vector<PatchMethod> methods;
-};
+static std::vector<PatchMethod> parsePatchesArg(const char* list) {
+    std::vector<PatchMethod> ps;
+    int i = 0;
+    for (;;) {
+        PatchMethod pm;
+        int j = 0;
+        bool type_turn = false;
+        std::string patch_type_str;
+        for (;;) {
+            char c = list[i + j++];
+            if (c == '\0') break;
+            if (c == ';') break;
+            if (isspace(c)) continue;
+            if (c == ':') {
+                type_turn = true;
+                continue;
+            }
+            if (type_turn) patch_type_str.push_back(c);
+            else pm.method_name.push_back(c);
+        }
+        if (pm.method_name.empty() || patch_type_str.empty()) break;
+        if (!patchTypeFromStr(patch_type_str.c_str(), pm.patch_type)) {
+            fprintf(stderr, "Invalid patch type '%s'\n", patch_type_str.c_str());
+            return {};
+        }
+        ps.push_back(std::move(pm));
+        i += j;
+    }
 
-static PatchJar patches[] = {
-    {.jar_name = "services.jar",
-     .methods =
-         {
-             {.method_name = "isSecureLocked", .ret_type = "Z", .patch_type = RET_FALSE},
-             {.method_name = "notifyScreenshotListeners", .ret_type = "Ljava/util/List;", .patch_type = RET_EMPTY_LIST},
-             {.method_name = "isAllowAudioPlaybackCapture", .ret_type = "Z", .patch_type = RET_TRUE},
-         }},
-    {.jar_name = "semwifi-service.jar",
-     .methods =
-         {
-             {.method_name = "isSecureLocked", .ret_type = "Z", .patch_type = RET_FALSE},
-         }},
-    {.jar_name = "miui-services.jar",
-     .methods =
-         {
-             {.method_name = "notAllowCaptureDisplay", .ret_type = "Z", .patch_type = RET_FALSE},
-         }},
-};
+    return ps;
+}
 
-bool create_new_img(std::shared_ptr<ir::DexFile> dex_ir, const char* out_dex_filename_) {
+bool createNewImg(std::shared_ptr<ir::DexFile> dex_ir, const char* out_dex_filename) {
     struct Allocator : public dex::Writer::Allocator {
         virtual void* Allocate(size_t size) { return ::malloc(size); }
         virtual void Free(void* ptr) { ::free(ptr); }
@@ -61,25 +86,23 @@ bool create_new_img(std::shared_ptr<ir::DexFile> dex_ir, const char* out_dex_fil
     new_image = writer.CreateImage(&allocator, &new_image_size);
 
     if (new_image == nullptr) {
-        fprintf(stderr, "ERROR: Cannot create a new .dex image\n");
+        fprintf(stderr, "Cannot create a new .dex image\n");
         return false;
     }
 
-    if (out_dex_filename_ != nullptr) {
-        FILE* out_file = fopen(out_dex_filename_, "wb");
-        if (out_file == nullptr) {
-            fprintf(stderr, "ERROR: Cannot create output .dex file (%s)\n", out_dex_filename_);
-            return false;
-        }
-        assert(fwrite(new_image, 1, new_image_size, out_file) == new_image_size);
-        fclose(out_file);
+    FILE* out_file = fopen(out_dex_filename, "wb");
+    if (out_file == nullptr) {
+        fprintf(stderr, "Cannot create output .dex file (%s)\n", out_dex_filename);
+        return false;
     }
+    assert(fwrite(new_image, 1, new_image_size, out_file) == new_image_size);
+    fclose(out_file);
     allocator.Free(new_image);
 
     return true;
 }
 
-void ret_empty_list(lir::CodeIr& code_ir, ir::Builder& builder) {
+void retEmptyList(lir::CodeIr& code_ir, ir::Builder& builder) {
     ir::MethodDecl* mdecl =
         builder.GetMethodDecl(builder.GetAsciiString("emptyList"),
                               builder.GetProto(builder.GetType("Ljava/util/List;"), builder.GetTypeList({})),
@@ -103,7 +126,7 @@ void ret_empty_list(lir::CodeIr& code_ir, ir::Builder& builder) {
     code_ir.instructions.insert(code_ir.instructions.begin(), invokeOp);
 }
 
-void ret_empty_list_field(lir::CodeIr& code_ir, ir::Builder& builder) {
+void retEmptyListField(lir::CodeIr& code_ir, ir::Builder& builder) {
     auto* sgetOp = code_ir.Alloc<lir::Bytecode>();
     sgetOp->opcode = dex::OP_SGET_OBJECT;
     sgetOp->operands.push_back(code_ir.Alloc<lir::VReg>(0));
@@ -123,7 +146,7 @@ void ret_empty_list_field(lir::CodeIr& code_ir, ir::Builder& builder) {
     code_ir.instructions.insert(code_ir.instructions.begin(), sgetOp);
 }
 
-void ret_const(lir::CodeIr& code_ir, ir::Builder& builder, int v) {
+void retConst(lir::CodeIr& code_ir, ir::Builder& builder, int v) {
     lir::Bytecode* retOp = code_ir.Alloc<lir::Bytecode>();
     retOp->opcode = dex::OP_RETURN;
     retOp->operands.push_back(code_ir.Alloc<lir::VReg>(0));
@@ -137,16 +160,15 @@ void ret_const(lir::CodeIr& code_ir, ir::Builder& builder, int v) {
     code_ir.instructions.insert(code_ir.instructions.begin(), constOp);
 }
 
-ir::EncodedMethod* find_method(std::shared_ptr<ir::DexFile> dex_ir, PatchMethod& p) {
+ir::EncodedMethod* findMethod(std::shared_ptr<ir::DexFile> dex_ir, PatchMethod& p) {
     ir::EncodedMethod* method = nullptr;
     for (auto& ir_method : dex_ir->encoded_methods) {
         // printf("%s->%s%s\n", ir_method->decl->parent->Decl().c_str(), ir_method->decl->name->c_str(),
         //        ir_method->decl->prototype->Signature().c_str());
 
-        if (strcmp(ir_method->decl->name->c_str(), p.method_name) == 0 &&
-            (p.ret_type == nullptr ||
-             strcmp(ir_method->decl->prototype->return_type->descriptor->c_str(), p.ret_type) == 0) &&
-            (p.parent_name == nullptr || strcmp(ir_method->decl->parent->Decl().c_str(), p.parent_name) == 0) &&
+        if (strcmp(ir_method->decl->name->c_str(), p.method_name.c_str()) == 0 &&
+            strcmp(ir_method->decl->prototype->return_type->descriptor->c_str(), retTypeFromPatch(p.patch_type)) == 0 &&
+            (p.parent_name.empty() || strcmp(ir_method->decl->parent->Decl().c_str(), p.parent_name.c_str()) == 0) &&
             ir_method->code != nullptr
 
         ) {
@@ -157,7 +179,7 @@ ir::EncodedMethod* find_method(std::shared_ptr<ir::DexFile> dex_ir, PatchMethod&
     return method;
 }
 
-void patch_dex(std::shared_ptr<ir::DexFile> dex_ir, PatchMethod& p, ir::EncodedMethod* method) {
+void patchDex(std::shared_ptr<ir::DexFile> dex_ir, PatchMethod& p, ir::EncodedMethod* method) {
     method->code->registers = method->code->ins_count + 1;
 
     lir::CodeIr code_ir(method, dex_ir);
@@ -170,14 +192,14 @@ void patch_dex(std::shared_ptr<ir::DexFile> dex_ir, PatchMethod& p, ir::EncodedM
     }
 
     switch (p.patch_type) {
-        case RET_EMPTY_LIST:
-            ret_empty_list(code_ir, builder);
+        case PatchType::RET_EMPTY_LIST:
+            retEmptyList(code_ir, builder);
             break;
-        case RET_FALSE:
-            ret_const(code_ir, builder, 0);
+        case PatchType::RET_FALSE:
+            retConst(code_ir, builder, 0);
             break;
-        case RET_TRUE:
-            ret_const(code_ir, builder, 1);
+        case PatchType::RET_TRUE:
+            retConst(code_ir, builder, 1);
             break;
         default:
             assert(false && "unreachable");
@@ -185,37 +207,39 @@ void patch_dex(std::shared_ptr<ir::DexFile> dex_ir, PatchMethod& p, ir::EncodedM
     code_ir.Assemble();
 }
 
+static void printUsage(const char* program_name) {
+    fprintf(stderr,
+            "Usage:\n  %s <in dex> <out dex> <patch definitions>\n"
+            "  Example patch defs.:\n"
+            "    methodName1:RET_FALSE;\n"
+            "    methodName2:RET_TRUE;\n"
+            "    methodName3:RET_EMPTY_LIST;\n",
+            program_name);
+}
+
 int main(int argc, char* argv[]) {
-    if (argc <= 3) {
-        fprintf(stderr, "Not enough args.\n");
+    if (argc != 4) {
+        printUsage(argv[0]);
         return 1;
     }
     const char* dex_filename = argv[1];
     const char* out_dex_filename = argv[2];
-    const char* jar_name = argv[3];
-
-    PatchJar* patch = nullptr;
-    for (auto& p : patches) {
-        if (strcmp(p.jar_name, jar_name) == 0) {
-            patch = &p;
-            break;
-        }
-    }
-    if (patch == nullptr) {
-        fprintf(stderr, "ERROR: no patch was found for %s.\n", jar_name);
+    auto patches = parsePatchesArg(argv[3]);
+    if (patches.empty()) {
+        printUsage(argv[0]);
         return 1;
     }
 
     struct stat path_stat;
     stat(dex_filename, &path_stat);
     if (!S_ISREG(path_stat.st_mode)) {
-        fprintf(stderr, "ERROR: '%s' is not a regular file.\n", dex_filename);
+        fprintf(stderr, "'%s' is not a regular file.\n", dex_filename);
         return 1;
     }
 
     FILE* in_file = fopen(dex_filename, "rb");
     if (in_file == nullptr) {
-        fprintf(stderr, "ERROR: Cannot open input .dex file (%s)\n", dex_filename);
+        fprintf(stderr, "Cannot open input .dex file (%s)\n", dex_filename);
         return 1;
     }
 
@@ -232,18 +256,20 @@ int main(int argc, char* argv[]) {
     auto dex_ir = reader.GetIr();
 
     bool patched = false;
-    for (auto& p : patch->methods) {
-        auto method = find_method(dex_ir, p);
-        if (method == nullptr) continue;
-
-        patch_dex(dex_ir, p, method);
-        printf("%s\n", p.method_name);
+    for (auto& p : patches) {
+        auto method = findMethod(dex_ir, p);
+        if (method == nullptr) {
+            printf("Method not found: %s()%s\n", p.method_name.c_str(), retTypeFromPatch(p.patch_type));
+            continue;
+        }
+        patchDex(dex_ir, p, method);
+        printf("Patched: %s\n", p.method_name.c_str());
         patched = true;
     }
     fclose(in_file);
 
     if (patched) {
-        if (!create_new_img(dex_ir, out_dex_filename)) return 1;
+        if (!createNewImg(dex_ir, out_dex_filename)) return 1;
     }
 
     return 0;
