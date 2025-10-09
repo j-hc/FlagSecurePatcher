@@ -7,3 +7,4 @@ deps
 /*.class
 /*.smali
 testing
+module/util/bin/*/paccer
